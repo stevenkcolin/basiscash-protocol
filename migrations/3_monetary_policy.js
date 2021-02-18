@@ -20,6 +20,8 @@ const Treasury = artifacts.require('Treasury');
 const UniswapV2Factory = artifacts.require('UniswapV2Factory');
 const UniswapV2Router02 = artifacts.require('UniswapV2Router02');
 
+const MINUTE = 60;
+const HOUR = 60 * MINUTE;
 const DAY = 86400;
 
 async function migration(deployer, network, accounts) {
@@ -74,8 +76,8 @@ async function migration(deployer, network, accounts) {
     share.address, dai.address, unit, unit, unit, unit, accounts[0],  deadline(),
   );
 
-  console.log(`DAI-BAC pair address: ${await uniswap.getPair(dai.address, cash.address)}`);
-  console.log(`DAI-BAS pair address: ${await uniswap.getPair(dai.address, share.address)}`);
+  console.log(`DAI-BDC pair address: ${await uniswap.getPair(dai.address, cash.address)}`);
+  console.log(`DAI-BDS pair address: ${await uniswap.getPair(dai.address, share.address)}`);
 
   // Deploy boardroom
   console.log("deployer.deploy(Boardroom, cash.address, share.address);");
@@ -91,7 +93,7 @@ async function migration(deployer, network, accounts) {
     uniswap.address,
     cash.address,
     dai.address,
-    DAY,
+    3 * MINUTE,
     POOL_START_DATE
   );
 
@@ -100,6 +102,19 @@ async function migration(deployer, network, accounts) {
     startTime += 5 * DAY;
   }
 
+  // await deployer.deploy(
+  //   Treasury,
+  //   cash.address,
+  //   Bond.address,
+  //   Share.address,
+  //   Oracle.address,
+  //   Oracle.address,
+  //   Boardroom.address,
+  //   accounts[1],
+  //   startTime,
+  // );
+  const SimpleFund = artifacts.require('SimpleERCFund');
+  await deployer.deploy(SimpleFund);
   await deployer.deploy(
     Treasury,
     cash.address,
@@ -108,7 +123,7 @@ async function migration(deployer, network, accounts) {
     Oracle.address,
     Oracle.address,
     Boardroom.address,
-    cash.address,
+    SimpleFund.address,
     startTime,
   );
 }

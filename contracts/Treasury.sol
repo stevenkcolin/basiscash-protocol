@@ -52,6 +52,7 @@ contract Treasury is ContractGuard, Epoch {
     uint256 public fundAllocationRate = 2; // %
     // add inflationPercentCeil
     uint256 public inflationPercentCeil;
+    uint256 public seigniorageCeil;
 
     /* ========== CONSTRUCTOR ========== */
 
@@ -64,7 +65,7 @@ contract Treasury is ContractGuard, Epoch {
         address _boardroom,
         address _fund,
         uint256 _startTime
-    ) public Epoch(5 minutes, _startTime, 0) {
+    ) public Epoch(10 minutes, _startTime, 0) {
         cash = _cash;
         bond = _bond;
         share = _share;
@@ -77,8 +78,9 @@ contract Treasury is ContractGuard, Epoch {
         cashPriceOne = 10**18;
         cashPriceCeiling = uint256(105).mul(cashPriceOne).div(10**2);
 
-        // inflation at most 4%
-        inflationPercentCeil = uint256(4).mul(cashPriceOne).div(10**2);
+        // inflation at most 6%
+        inflationPercentCeil = uint256(6).mul(cashPriceOne).div(10**2);
+        seigniorageCeil = uint256(100000).mul(cashPriceOne);
 
         bondDepletionFloor = uint256(1000).mul(cashPriceOne);
     }
@@ -181,6 +183,15 @@ contract Treasury is ContractGuard, Epoch {
         inflationPercentCeil = inflationPercentCeil_;
     }
 
+    function setSeigniorageCeil(uint256 _seigniorageCeil)
+        public
+        onlyOperator
+    {
+        seigniorageCeil = _seigniorageCeil;
+    }
+
+
+
     /* ========== MUTABLE FUNCTIONS ========== */
 
     function _updateCashPrice() internal {
@@ -252,8 +263,10 @@ contract Treasury is ContractGuard, Epoch {
         checkEpoch
         checkOperator
     {
+
         _updateCashPrice();
         uint256 cashPrice = _getCashPrice(seigniorageOracle);
+
         if (cashPrice <= cashPriceCeiling) {
             return; // just advance epoch instead revert
         }
@@ -262,24 +275,26 @@ contract Treasury is ContractGuard, Epoch {
         uint256 cashSupply = IERC20(cash).totalSupply().sub(
             accumulatedSeigniorage
         );
-
         // Note: we change cashPriceOne to cashPriceCeiling
         uint256 percentage = cashPrice.sub(cashPriceCeiling);
+
         // add inflation as maximum = 4%
         percentage = Math.min(percentage, inflationPercentCeil);
-
         uint256 seigniorage = cashSupply.mul(percentage).div(1e18);
+        seigniorage = Math.min(seigniorage,seigniorageCeil);
+
         IBasisAsset(cash).mint(address(this), seigniorage);
+
 
         // ======================== BIP-3
         uint256 fundReserve = seigniorage.mul(fundAllocationRate).div(100);
         if (fundReserve > 0) {
-            IERC20(cash).safeApprove(fund, fundReserve);
-            ISimpleERCFund(fund).deposit(
-                cash,
-                fundReserve,
-                'Treasury: Seigniorage Allocation'
-            );
+           IERC20(cash).safeApprove(fund, fundReserve);
+           ISimpleERCFund(fund).deposit(
+               cash,
+               fundReserve,
+               'Treasury: Seigniorage Allocation'
+           );
             emit ContributionPoolFunded(now, fundReserve);
         }
 
@@ -306,6 +321,15 @@ contract Treasury is ContractGuard, Epoch {
         }
     }
 
+    function setLockUp(
+        uint256 _withdrawLockupEpochs,
+        uint256 _rewardLockupEpochs,
+        uint256 _epochAlignTimestamp,
+        uint256 _epochPeriod
+    ) external onlyOperator {
+        IBoardroom(boardroom).setLockUp(_withdrawLockupEpochs, _rewardLockupEpochs, _epochAlignTimestamp, _epochPeriod);
+    }
+
     // GOV
     event Initialized(address indexed executor, uint256 at);
     event Migration(address indexed target);
@@ -321,4 +345,5 @@ contract Treasury is ContractGuard, Epoch {
     event TreasuryFunded(uint256 timestamp, uint256 seigniorage);
     event BoardroomFunded(uint256 timestamp, uint256 seigniorage);
     event ContributionPoolFunded(uint256 timestamp, uint256 seigniorage);
+    event LogError(address indexed from, uint256 indexed at, string reason);
 }
